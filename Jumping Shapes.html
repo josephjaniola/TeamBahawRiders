@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Jumping Shapes</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: linear-gradient(to right, #000428, #004e92);
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      flex-direction: column;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      background-color: #111;
+      border: 3px solid white;
+    }
+    #menu, #playScreen, #colorMenu, #gameOverContainer {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      color: white;
+      text-align: center;
+    }
+    .shape-button, .play-button, .color-button {
+      margin: 5px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .shape-button { background: orange; }
+    .shape-button:hover { background: darkorange; }
+    .play-button { background: limegreen; }
+    .play-button:hover { background: green; }
+    .color-button:hover { opacity: 0.8; }
+  </style>
+</head>
+<body>
+
+
+<div id="playScreen">
+  <h1>Jumping Shapes</h1>
+  <button class="play-button" onclick="showShapeSelector()">▶ Play</button>
+  <button class="play-button" onclick="resetHighScore()">Reset High Score</button>
+</div>
+
+<div id="menu" style="display:none;">
+  <h2>Choose Your Shape</h2>
+  <button class="shape-button" onclick="selectShape('square')">▭ Square</button>
+  <button class="shape-button" onclick="selectShape('circle')">⚫ Circle</button>
+  <button class="shape-button" onclick="selectShape('hexagon')">⬣ Hexagon</button>
+  <button class="shape-button" onclick="selectShape('star')">⭐ Star</button>
+</div>
+
+
+<div id="colorMenu" style="display:none;">
+  <h2>Choose Shape Color</h2>
+  <button class="color-button" style="background:red;" onclick="selectColor('red')">Red</button>
+  <button class="color-button" style="background:cyan;" onclick="selectColor('cyan')">Cyan</button>
+  <button class="color-button" style="background:lime;" onclick="selectColor('lime')">Lime</button>
+  <button class="color-button" style="background:yellow;" onclick="selectColor('yellow')">Yellow</button>
+</div>
+
+
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+
+
+<div id="gameOverContainer" style="display:none;">
+  <h1>💀 Game Over</h1>
+  <p id="finalScore"></p>
+  <p id="finalHighScore"></p>
+  <button class="play-button" onclick="restartGame()">▶ Play Again</button>
+  <button class="play-button" onclick="goToMenu()">Back to Menu</button>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let selectedShape = null;
+let shapeColor = "cyan";
+let rotationAngle = 0;
+let loopStarted = false;
+let animationId = null; 
+
+const player = {
+  x: 100,
+  y: 300,
+  size: 30,
+  vy: 0,
+  gravity: 0.7,
+  jumpForce: -13,
+  grounded: false,
+  jumping: false
+};
+
+let obstacles = [];
+let speed = 6;
+let score = 0;
+let highScore = localStorage.getItem("highScore") || 0;
+let gameOver = false;
+let jumpEffects = [];
+
+function showShapeSelector() {
+  document.getElementById("playScreen").style.display = "none";
+  document.getElementById("menu").style.display = "block";
+}
+
+function selectShape(shape) {
+  selectedShape = shape;
+  document.getElementById("menu").style.display = "none";
+  document.getElementById("colorMenu").style.display = "block";
+}
+
+function selectColor(color) {
+  shapeColor = color;
+  document.getElementById("colorMenu").style.display = "none";
+  resetGame();
+  if (!loopStarted) {
+    loopStarted = true;
+    gameLoop();
+  }
+}
+
+function spawnObstacle() {
+  const height = Math.random() * 40 + 20;
+  obstacles.push({
+    x: canvas.width + Math.random() * 200,
+    y: canvas.height - height,
+    w: 20,
+    h: height
+  });
+}
+
+function resetGame() {
+  obstacles = [];
+  player.y = 300;
+  player.vy = 0;
+  player.grounded = false;
+  player.jumping = false;
+  score = 0;
+  gameOver = false;
+  rotationAngle = 0;
+  jumpEffects = [];
+}
+
+function restartGame() {
+  document.getElementById("gameOverContainer").style.display = "none";
+  resetGame();
+}
+
+function goToMenu() {
+  document.getElementById("gameOverContainer").style.display = "none";
+  selectedShape = null;
+  shapeColor = "cyan";
+  loopStarted = false;
+
+  cancelAnimationFrame(animationId);
+
+  resetGame();
+  document.getElementById("menu").style.display = "block";
+}
+
+function resetHighScore() {
+  localStorage.setItem("highScore", 0);
+  highScore = 0;
+  alert("High Score has been reset to 0!");
+}
+
+function update() {
+  if (gameOver || !selectedShape) return;
+
+  const prevY = player.y;
+  player.vy += player.gravity;
+  player.y += player.vy;
+
+  if (player.y + player.size >= canvas.height) {
+    player.y = canvas.height - player.size;
+    player.vy = 0;
+    player.grounded = true;
+    player.jumping = false;
+  } else {
+    player.grounded = false;
+  }
+
+  obstacles.forEach(ob => ob.x -= speed);
+  obstacles = obstacles.filter(ob => ob.x + ob.w > 0);
+
+  if (Math.random() < 0.02) spawnObstacle();
+
+  for (let ob of obstacles) {
+    const landedOnTop =
+      player.x + player.size > ob.x &&
+      player.x < ob.x + ob.w &&
+      prevY + player.size <= ob.y &&
+      player.y + player.size >= ob.y;
+
+    if (landedOnTop) {
+      player.y = ob.y - player.size;
+      player.vy = 0;
+      player.grounded = true;
+      player.jumping = false;
+    } else {
+      const colliding =
+        player.x < ob.x + ob.w &&
+        player.x + player.size > ob.x &&
+        player.y < ob.y + ob.h &&
+        player.y + player.size > ob.y;
+
+      if (colliding) {
+        gameOver = true;
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem("highScore", highScore);
+        }
+        showGameOverScreen();
+      }
+    }
+  }
+
+  score++;
+  jumpEffects.forEach(e => e.radius += 2);
+  jumpEffects = jumpEffects.filter(e => e.radius < 30);
+}
+
+function showGameOverScreen() {
+  document.getElementById("finalScore").innerText = "Your Score: " + score;
+  document.getElementById("finalHighScore").innerText = "High Score: " + highScore;
+  document.getElementById("gameOverContainer").style.display = "block";
+}
+
+function drawPlayerShape(shape, x, y, size) {
+  ctx.save();
+  ctx.translate(x + size / 2, y + size / 2);
+  if (!player.grounded) rotationAngle += 0.1;
+  else rotationAngle = 0;
+  ctx.rotate(rotationAngle);
+  ctx.fillStyle = shapeColor;
+  ctx.beginPath();
+
+  switch (shape) {
+    case 'square':
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+      break;
+    case 'circle':
+      ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'hexagon':
+      const r = size / 2;
+      ctx.moveTo(r * Math.cos(0), r * Math.sin(0));
+      for (let i = 1; i <= 6; i++) {
+        ctx.lineTo(r * Math.cos(i * 2 * Math.PI / 6), r * Math.sin(i * 2 * Math.PI / 6));
+      }
+      ctx.fill();
+      break;
+    case 'star':
+      const spikes = 5;
+      const outerRadius = size / 2;
+      const innerRadius = size / 4;
+      let rot = Math.PI / 2 * 3;
+      let step = Math.PI / spikes;
+      ctx.moveTo(0, -outerRadius);
+      for (let i = 0; i < spikes; i++) {
+        let x1 = Math.cos(rot) * outerRadius;
+        let y1 = Math.sin(rot) * outerRadius;
+        ctx.lineTo(x1, y1);
+        rot += step;
+        x1 = Math.cos(rot) * innerRadius;
+        y1 = Math.sin(rot) * innerRadius;
+        ctx.lineTo(x1, y1);
+        rot += step;
+      }
+      ctx.lineTo(0, -outerRadius);
+      ctx.closePath();
+      ctx.fill();
+      break;
+  }
+
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!selectedShape) return;
+
+  jumpEffects.forEach(e => {
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = shapeColor;
+    ctx.globalAlpha = 1 - e.radius / 30;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+
+  drawPlayerShape(selectedShape, player.x, player.y, player.size);
+
+  ctx.fillStyle = "crimson";
+  obstacles.forEach(ob => {
+    ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+  });
+
+  ctx.fillStyle = "white";
+  ctx.font = "20px Arial";
+  ctx.fillText("Score: " + score, 20, 30);
+  ctx.fillText("High Score: " + highScore, 20, 60);
+}
+
+function gameLoop() {
+  update();
+  draw();
+  animationId = requestAnimationFrame(gameLoop);
+}
+
+document.addEventListener('keydown', e => {
+  if (!selectedShape) return;
+
+  if (e.code === 'Space' && player.grounded && !player.jumping) {
+    player.vy = player.jumpForce;
+    player.grounded = false;
+    player.jumping = true;
+    jumpEffects.push({ x: player.x + player.size / 2, y: player.y + player.size, radius: 5 });
+  }
+});
+</script>
+
+</body>
+</html>
